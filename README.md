@@ -1,39 +1,73 @@
-# spektrafilm — 桌面体验增强版 (fork)
+<div align="center">
 
-> 本仓库 fork 自 [andreavolpato/spektrafilm](https://github.com/andreavolpato/spektrafilm)，光谱胶片模拟的核心模型与胶片数据均来自原作者。本 fork 在其基础上为桌面 GUI 增加批量处理、编辑工具、中文界面与若干性能优化。许可证与原项目一致，详见 [LICENSE](LICENSE) 与 [SPEKTRAFILM_LICENSE.txt](SPEKTRAFILM_LICENSE.txt)。
+# spektrafilm · 中文桌面增强版
+
+**基于 [andreavolpato/spektrafilm](https://github.com/andreavolpato/spektrafilm) 的社区 fork**
+
+*spectral film modeling powered by [spektrafilm](https://github.com/andreavolpato/spektrafilm) by Andrea Volpato*
+
+[原项目 Upstream](https://github.com/andreavolpato/spektrafilm) · [支持原作者 Support the author](https://buymeacoffee.com/andreavolpato) · [讨论区 Discussion](https://discuss.pixls.us/c/software/spektrafilm/)
+
+</div>
+
+> [!IMPORTANT]
+> **致谢原作者 · Credit**
 >
-> This is a fork of [andreavolpato/spektrafilm](https://github.com/andreavolpato/spektrafilm). All credit for the spectral film model and stock data goes to the original author. This fork adds batch processing, editing tools, a Simplified Chinese UI and several performance improvements to the desktop GUI.
+> spektrafilm 由 **[Andrea Volpato](https://github.com/andreavolpato)** 创建并维护。光谱胶片模拟的物理模型、胶片与相纸数据、LUT 生成器以及整个 GUI 框架，均是原作者数百小时投入的成果。本 fork 只在桌面界面层做了增强（批量处理、编辑工具、中文界面与预览性能），**胶片模型与数据没有改动（性能优化部分经测试保持数值一致），一切功劳归于原作者。**
+>
+> spektrafilm is created and maintained by **[Andrea Volpato](https://github.com/andreavolpato)**. The spectral film model, film and paper profiles, LUT creator and the GUI framework are all his work. This fork only adds desktop-GUI conveniences on top; the film model and data are unchanged (performance work is tested to give the same results), and all credit belongs to the original author.
 
-## 新增内容 / What's new in this fork
+> [!NOTE]
+> **免费 · 开源 · Free and open source**
+>
+> 本 fork 与原项目一样**完全免费、完全开源**，不收取任何费用，也不会用于售卖。
+> - 代码遵循 **GPLv3**（见 [LICENSE](LICENSE)）：任何基于本项目的衍生作品也必须以 GPLv3 开源。
+> - 胶片 / 相纸配置与 LUT 遵循原作者的 **CC BY-SA 4.0** 许可（见 [SPEKTRAFILM_LICENSE.txt](SPEKTRAFILM_LICENSE.txt)）：可免费使用，须注明出处，禁止转售。
+>
+> Like the original, this fork is free and open source: code under GPLv3, profiles and LUTs under the author's CC BY-SA 4.0 license. Nothing here is sold.
 
-**批量处理 Batch workflow**
-- 文件夹浏览面板，选择文件夹即可载入其中的 RAW、TIFF、JPEG、PNG、EXR 照片 — folder browser panel (`folder_panel.py`)
-- 胶片条与印样（contact sheet）两种缩略图视图 — film strip / contact sheet view (`batch_panel.py`)
-- 以当前参数批量导出 JPEG / TIFF（16 位）/ PNG / EXR（16 位浮点），在后台线程运行、不阻塞界面 — background batch export (`batch.py`, `controller_batch.py`)
+### 如果你喜欢这个项目，请支持原作者 · If you like it, support the original author
 
-**编辑工具 Editing tools** (`editing_tools.py`)
-- 撤销历史（最多 100 步，按编辑停顿自动记录）、一键重置、前后对比
-- 可视化胶片 / 相纸选择器，替代原来的下拉列表，且保持原有存档与参数兼容 (`stock_picker.py`)
+- 给原仓库点个 ⭐ → [andreavolpato/spektrafilm](https://github.com/andreavolpato/spektrafilm)
+- 请原作者喝杯咖啡 → [buymeacoffee.com/andreavolpato](https://buymeacoffee.com/andreavolpato)
+- 学术使用请引用原项目（见 [CITATION.cff](CITATION.cff)）
+- 发现核心模型的问题，请到[原仓库](https://github.com/andreavolpato/spektrafilm/issues)反馈
 
-**性能 Performance**
-- 用 Numba 重写 CAM16-UCS 正 / 逆变换，仅计算输出色域压缩所需的量并行执行；单元测试验证与 `colour` 库结果一致（atol 1e-9）(`fast_cam16ucs.py`, `tests/test_fast_cam16ucs.py`)
-- 3D LUT 预处理结果加入 LRU 缓存，避免重复准备 (`fast_interp_lut.py`)
-- RAW 预览使用半尺寸解码；预览缩放先做块平均预滤波，再做精确缩放；相同参数的渲染结果缓存复用 (`raw_file_processor.py`, `controller_runtime.py`)
+---
 
-**界面与交付 UI & packaging**
-- 重新设计的主题配色、顶部栏与图标工具栏 (`theme_*.py`, `workspace.py`, `ui_icons.py`)
-- 简体中文界面：只翻译显示文本，存档与参数键名保持英文，旧存档不受影响 (`i18n_zh.py`)
-- Windows 无控制台启动器：启动画面 + 启动失败时弹窗并写入日志 (`launcher.py`)
+## 本 fork 新增了什么 · What this fork adds
 
-## 运行 / Run
+| 方向 | 新增内容 | 相关文件 |
+|---|---|---|
+| **批量处理** | 文件夹浏览，载入 RAW、TIFF、JPEG、PNG、EXR 照片；胶片条 / 印样两种缩略图视图；以当前参数后台批量导出 JPEG、TIFF（16 位）、PNG、EXR（16 位浮点），不阻塞界面 | `folder_panel.py` `batch_panel.py` `batch.py` `controller_batch.py` |
+| **编辑工具** | 撤销历史（最多 100 步，按编辑停顿自动记录）、一键重置、修图前后对比；可视化胶片 / 相纸选择器，替代下拉列表且兼容原有存档 | `editing_tools.py` `stock_picker.py` |
+| **预览性能** | Numba 编译的 CAM16-UCS 正 / 逆变换，只计算色域压缩所需的量并行执行，单测验证与 `colour` 库一致（atol 1e-9）；3D LUT 预处理 LRU 缓存；RAW 预览半尺寸解码；块平均预滤波的快速缩图；相同参数渲染结果复用 | `fast_cam16ucs.py` `fast_interp_lut.py` `raw_file_processor.py` `controller_runtime.py` |
+| **中文界面** | 简体中文显示文本；存档与参数键名保持英文，旧存档完全兼容，未翻译的文本自动回退英文 | `i18n_zh.py` |
+| **界面与启动** | 重新设计的主题配色、顶部栏与图标工具栏；Windows 无控制台启动器，带启动画面，启动失败时弹窗并写入日志 | `theme_*.py` `workspace.py` `launcher.py` |
+
+<details>
+<summary>English summary</summary>
+
+- **Batch workflow** — folder browser, film strip / contact sheet, background batch export (JPEG / 16-bit TIFF / PNG / EXR).
+- **Editing tools** — undo history, reset, before/after compare, visual film & paper picker (save-file compatible).
+- **Preview performance** — Numba-compiled CAM16-UCS transforms (tested against `colour` to 1e-9), LRU cache for prepared 3D LUTs, half-size RAW decode, faster preview resize, render-result caching.
+- **Simplified Chinese UI** — display text only; persisted keys stay in English.
+- **UI & launcher** — redesigned theme and toolbar; windowed Windows launcher with splash screen and startup error log.
+
+</details>
+
+## 快速开始 · Quick start
 
 ```bash
+git clone https://github.com/Codooooooo/spektrafilm.git
+cd spektrafilm
 pip install -e .
-spektrafilm                          # 标准启动 / standard launch
-pythonw -m spektrafilm_gui.launcher  # Windows 无控制台启动（带启动画面）/ windowed launch on Windows
+
+spektrafilm                          # 启动 GUI / launch the GUI
+pythonw -m spektrafilm_gui.launcher  # Windows：无控制台窗口启动 / windowed launch on Windows
 ```
 
-测试 / Tests:
+运行新增功能的测试 · Tests for the additions:
 
 ```bash
 pip install -e ".[dev]"
@@ -42,7 +76,11 @@ pytest tests/test_fast_cam16ucs.py tests/gui/test_batch.py
 
 ---
 
-*以下为原项目 README / Original README below.*
+<div align="center">
+
+*以下为原项目 README，内容版权归原作者所有 · Original README by Andrea Volpato below*
+
+</div>
 
 ![spektrafilm banner](img/readme/banner.jpg)
 
