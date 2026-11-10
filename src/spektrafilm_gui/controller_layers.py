@@ -36,7 +36,7 @@ STACK_LAYER_ORDER = (
 )
 OUTPUT_LAYER_ANIMATION_DURATION_MS = 1600
 OUTPUT_LAYER_ANIMATION_INTERVAL_MS = 32
-OUTPUT_LAYER_CROSSFADE_FRAMES = 10
+OUTPUT_LAYER_CROSSFADE_FRAMES = 5
 OUTPUT_LAYER_ANIMATION_MAX_PIXELS = 1_500_000
 WATERMARK_LONG_EDGE_PIXELS = 1024
 
@@ -364,9 +364,10 @@ class ViewerLayerService:
         output_cctf_encoding: bool,
         use_display_transform: bool,
         output_interpolation_mode: str = 'spline36',
+        transition: bool = True,
     ) -> None:
         existing_layer = self.image_layer(OUTPUT_LAYER_NAME)
-        animate_on_show = existing_layer is None or not bool(getattr(existing_layer, 'visible', True))
+        animate_on_show = transition and (existing_layer is None or not bool(getattr(existing_layer, 'visible', True)))
         output_image = np.asarray(image)
         output_shape = tuple(int(dimension) for dimension in output_image.shape)
         crossfade_source_image: np.ndarray | None = None
@@ -379,7 +380,7 @@ class ViewerLayerService:
             if animate_on_show:
                 replace_layer = existing_shape != output_shape
             else:
-                use_crossfade = _supports_output_layer_crossfade(existing_data, output_image)
+                use_crossfade = transition and _supports_output_layer_crossfade(existing_data, output_image)
                 if use_crossfade:
                     crossfade_source_image = np.array(existing_data, copy=True)
                 replace_layer = not use_crossfade and existing_shape != output_shape

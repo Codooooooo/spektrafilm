@@ -24,6 +24,7 @@ from spektrafilm_gui.persistence import (
     save_gui_state_to_path,
 )
 from spektrafilm_gui.state import PROJECT_DEFAULT_GUI_STATE, digest_after_selection, gui_state_from_params
+from spektrafilm_gui.i18n_zh import LocalizedMessageBox, translate
 from spektrafilm_gui.napari_layout import dialog_parent, reset_viewer_camera, set_canvas_background, set_status
 from spektrafilm_gui.params_mapper import build_params_from_state
 from spektrafilm_gui.state_bridge import apply_gui_state, collect_gui_state
@@ -42,7 +43,7 @@ if TYPE_CHECKING:
 QThreadPool = getattr(QtCore, 'QThreadPool')
 QTimer = getattr(QtCore, 'QTimer')
 QFileDialog = QtWidgets.QFileDialog
-QMessageBox = QtWidgets.QMessageBox
+QMessageBox = LocalizedMessageBox
 SimulationRequest = runtime.SimulationRequest
 SimulationResult = runtime.SimulationResult
 STARTUP_PREVIEW_ASPECT_RATIO = (3, 2)
@@ -57,14 +58,14 @@ class _DirMemoryDialog:
     def get_save_file_name(self, parent, title, filename, file_filter):
         last_dir = load_dialog_dir(self._key)
         initial = str(Path(last_dir) / Path(filename).name) if last_dir else filename
-        path, fmt = QFileDialog.getSaveFileName(parent, title, initial, file_filter)
+        path, fmt = QFileDialog.getSaveFileName(parent, translate(title), initial, file_filter)
         if path:
             save_dialog_dir(self._key, str(Path(path).parent))
         return path, fmt
 
     def get_open_file_name(self, parent, title, _initial, file_filter):
         path, fmt = QFileDialog.getOpenFileName(
-            parent, title, load_dialog_dir(self._key), file_filter
+            parent, translate(title), load_dialog_dir(self._key), file_filter
         )
         if path:
             save_dialog_dir(self._key, str(Path(path).parent))
@@ -126,7 +127,7 @@ def load_and_process_raw_file(*args, **kwargs):
 
 
 def resize_for_preview(*args, **kwargs):
-    return import_module('spektrafilm.utils.preview').resize_for_preview(*args, **kwargs)
+    return runtime.fast_resize_for_preview(*args, **kwargs)
 
 
 colour = _LazyModuleProxy(_import_colour_module)
@@ -156,6 +157,58 @@ class GuiController:
         self._auto_preview_scheduled = False
         self._pending_auto_preview = False
         self._active_simulation_reports_status = True
+        self._batch_running = False
+        self._rotation_listener = None
+        self._proxy_path: str | None = None
+        self._proxy_quarter_turns = 0
+        self._full_image_loader = None
+        self._reload_listener = None
+        self._result_listener = None
+        self._output_shown_listener = None
+        self._skip_next_output_transition = False
+        self._active_simulation_path: str | None = None
+        self._active_simulation_look_key: int | None = None
+
+    def set_rotation_listener(self, listener) -> None:
+        self._rotation_listener = listener
+
+    def set_reload_listener(self, listener) -> None:
+        """``listener()`` re-decodes a proxy photo when the preview size changes."""
+        self._reload_listener = listener
+
+    def set_result_listener(self, listener) -> None:
+        """``listener(path, look_key, result)`` receives each finished preview."""
+        self._result_listener = listener
+
+    def set_output_shown_listener(self, listener) -> None:
+        self._output_shown_listener = listener
+
+    def is_simulating(self) -> bool:
+        return self._active_simulation_worker is not None
+
+    def set_full_image_loader(self, loader) -> None:
+        """``loader(path)`` must end in ``on_full_image_loaded`` or ``on_full_image_failed``."""
+        self._full_image_loader = loader
+
+    def on_full_image_loaded(self, path: str, image: np.ndarray) -> None:
+        if path != self._proxy_path:
+            return
+        self._current_input_image = np.rot90(image, k=self._proxy_quarter_turns) if self._proxy_quarter_turns else image
+        self._proxy_path = None
+        self._set_simulation_controls_enabled(True)
+        self.run_scan()
+
+    def on_full_image_failed(self, path: str, message: str) -> None:
+        if path != self._proxy_path:
+            return
+        self._set_simulation_controls_enabled(True)
+        QMessageBox.critical(dialog_parent(self._viewer), 'Run simulation', f'Simulation failed.\n\n{message}')
+
+    def set_batch_running(self, running: bool) -> None:
+        self._batch_running = running
+        self._set_simulation_controls_enabled(not running)
+        if not running:
+            self._replay_pending_auto_preview()
 
     def show_startup_placeholder(self) -> None:
         if self._white_border_layer() is not None:
@@ -180,7 +233,52 @@ class GuiController:
     def load_input_image(self, path: str) -> None:
         image = load_image_oiio(path)[..., :3]
         self._current_input_path = path
+        self._proxy_path = None
         self._set_or_add_input_stack(image)
+        self._request_auto_preview_if_enabled()
+
+    def show_loaded_image(
+        self,
+        path: str,
+        image: np.ndarray,
+        *,
+        preview_image: np.ndarray | None = None,
+        is_proxy: bool = False,
+        keep_output: bool = False,
+        quarter_turns: int = 0,
+        cached_result: runtime.CachedResult | None = None,
+    ) -> None:
+        """Show a decoded photo.
+
+        ``is_proxy`` marks ``image`` as a reduced decode; the full image is then
+        fetched only when a scan needs it. ``keep_output`` leaves the previous
+        result up until the new preview replaces it, so browsing does not flash
+        the blank paper and replay the develop animation. ``cached_result`` is an
+        already simulated preview for the current settings.
+        """
+        if quarter_turns:
+            image = np.rot90(image, k=quarter_turns)
+            preview_image = None if preview_image is None else np.rot90(preview_image, k=quarter_turns)
+        self._current_input_path = path
+        self._proxy_quarter_turns = quarter_turns if is_proxy else 0
+        self._proxy_path = path if is_proxy else None
+        self._update_preview_cache(
+            image,
+            home_input_stack=True,
+            hide_output=not (keep_output and self._auto_preview_enabled()),
+            preview_image=preview_image,
+        )
+        if cached_result is not None:
+            self._set_or_add_output_layer(
+                cached_result.display,
+                float_image=cached_result.float_image,
+                output_color_space=cached_result.output_color_space,
+                output_cctf_encoding=True,
+                use_display_transform=cached_result.use_display_transform,
+                transition=False,
+            )
+            return
+        self._skip_next_output_transition = keep_output
         self._request_auto_preview_if_enabled()
 
     def load_raw_image(self, path: str) -> None:
@@ -204,6 +302,7 @@ class GuiController:
             return
 
         self._current_input_path = path
+        self._proxy_path = None
         self._set_or_add_input_stack(image)
 
         lens_summary = lens_info.get('summary')
@@ -222,6 +321,9 @@ class GuiController:
         input_image = self._current_input_image
         if input_image is None:
             return
+        if self._proxy_path is not None and self._reload_listener is not None:
+            self._reload_listener()
+            return
         self._update_preview_cache(
             input_image,
             home_input_stack=False,
@@ -235,9 +337,18 @@ class GuiController:
         self._rotate_input_image(quarter_turns=1)
 
     def _rotate_input_image(self, *, quarter_turns: int) -> None:
+        if self._current_input_image is None:
+            return
+        self.apply_rotation(quarter_turns)
+        if self._rotation_listener is not None:
+            self._rotation_listener(quarter_turns)
+
+    def apply_rotation(self, quarter_turns: int) -> None:
         input_image = self._current_input_image
         if input_image is None:
             return
+        if self._proxy_path is not None:
+            self._proxy_quarter_turns += int(quarter_turns)
 
         rotated_image = np.rot90(np.asarray(input_image), k=int(quarter_turns))
         self._update_preview_cache(
@@ -282,6 +393,14 @@ class GuiController:
         )
 
     def run_scan(self) -> None:
+        if self._proxy_path is not None and self._full_image_loader is not None:
+            if self._active_simulation_worker is not None or self._batch_running:
+                set_status(self._viewer, 'Simulation already running')
+                return
+            self._set_simulation_controls_enabled(False)
+            set_status(self._viewer, '正在读取全分辨率 RAW……', timeout_ms=0)
+            self._full_image_loader(self._proxy_path)
+            return
         self._start_simulation(source_layer_name=INPUT_LAYER_NAME, mode_label='Scan')
 
     def request_auto_preview(self, *_args) -> None:
@@ -466,6 +585,7 @@ class GuiController:
         output_color_space: str,
         output_cctf_encoding: bool,
         use_display_transform: bool,
+        transition: bool = True,
     ) -> None:
         self._layers.set_or_add_output_layer(
             image,
@@ -474,7 +594,10 @@ class GuiController:
             output_cctf_encoding=output_cctf_encoding,
             use_display_transform=use_display_transform,
             output_interpolation_mode=self._output_interpolation_mode(),
+            **({} if transition else {'transition': False}),
         )
+        if self._output_shown_listener is not None:
+            self._output_shown_listener()
 
     def _set_or_add_input_stack(
         self,
@@ -492,9 +615,11 @@ class GuiController:
         *,
         home_input_stack: bool,
         hide_output: bool,
+        preview_image: np.ndarray | None = None,
     ) -> None:
         state = collect_gui_state(widgets=self._widgets)
-        preview_image = self._resize_for_preview(image, max_size=state.gui_only.display.settings.preview_max_size)
+        if preview_image is None:
+            preview_image = self._resize_for_preview(image, max_size=state.gui_only.display.settings.preview_max_size)
         preview_display_image = self._prepare_input_color_preview_image(
             preview_image,
             input_color_space=state.input_image.io.input_color_space,
@@ -538,7 +663,7 @@ class GuiController:
         if not self._auto_preview_enabled() or self._current_preview_image is None:
             self._pending_auto_preview = False
             return
-        if self._active_simulation_worker is not None:
+        if self._active_simulation_worker is not None or self._batch_running:
             self._pending_auto_preview = True
             return
         self._run_preview(report_status=False)
@@ -636,12 +761,13 @@ class GuiController:
             apply_stocks_specifics=apply_stocks_specifics,
         )
         try:
-            if self._runtime_simulator is None:
-                self._runtime_simulator = runtime_simulator(digested_params)
-            else:
-                self._runtime_simulator.update_params(digested_params)
-            self._next_runtime_digest_applies_stock_specifics = False
-            return self._runtime_simulator.process(image_data)
+            with runtime.SIMULATION_LOCK:
+                if self._runtime_simulator is None:
+                    self._runtime_simulator = runtime_simulator(digested_params)
+                else:
+                    self._runtime_simulator.update_params(digested_params)
+                self._next_runtime_digest_applies_stock_specifics = False
+                return self._runtime_simulator.process(image_data)
         except Exception:
             self._runtime_simulator = None
             raise
@@ -687,7 +813,7 @@ class GuiController:
         return params
 
     def _start_simulation(self, *, source_layer_name: str, mode_label: str, report_status: bool = True) -> None:
-        if self._active_simulation_worker is not None:
+        if self._active_simulation_worker is not None or self._batch_running:
             set_status(self._viewer, 'Simulation already running')
             return
 
@@ -716,6 +842,8 @@ class GuiController:
         worker.signals.finished.connect(self._on_simulation_finished)
         worker.signals.failed.connect(self._on_simulation_failed)
         self._active_simulation_worker = worker
+        self._active_simulation_path = self._current_input_path
+        self._active_simulation_look_key = runtime.look_key(state)
         self._active_simulation_label = mode_label
         self._active_simulation_reports_status = report_status
         self._set_simulation_controls_enabled(False)
@@ -729,13 +857,22 @@ class GuiController:
         self._active_simulation_label = None
         self._active_simulation_reports_status = True
         self._set_simulation_controls_enabled(True)
+        if self._active_simulation_path != self._current_input_path:
+            # The user moved on to another photo while this one was computing.
+            self._replay_pending_auto_preview()
+            return
+        transition = not self._skip_next_output_transition
+        self._skip_next_output_transition = False
         self._set_or_add_output_layer(
             result.display_image,
             float_image=result.float_image,
             output_color_space=result.output_color_space,
             output_cctf_encoding=True,
             use_display_transform=result.use_display_transform,
+            transition=transition,
         )
+        if self._result_listener is not None and result.mode_label == 'Preview':
+            self._result_listener(self._current_input_path, self._active_simulation_look_key, result)
         if report_status:
             set_status(self._viewer, f'{result.mode_label} completed. {result.status_message}')
         self._replay_pending_auto_preview()

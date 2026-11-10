@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from importlib import import_module
+from pathlib import Path
 import sys
 from typing import TYPE_CHECKING, Callable
 from typing import Any, cast
@@ -19,6 +20,7 @@ QStatusBar = QtWidgets.QStatusBar
 QScrollArea = QtWidgets.QScrollArea
 QWidget = QtWidgets.QWidget
 
+from spektrafilm_gui.i18n_zh import translate
 from spektrafilm_gui.theme import APP_STYLE_SHEET
 from spektrafilm_gui.theme_palette import (
     GRAY_0,
@@ -30,13 +32,16 @@ from spektrafilm_gui.theme_palette import (
     SIZE_FOOTER_TOP_SPACING,
     SIZE_PANEL_MARGIN,
     SIZE_SPLITTER_HANDLE_MARGIN_LEFT,
+    SIZE_TAB_CONTENT_RIGHT_MARGIN,
     SIZE_TAB_CONTENT_TOP_MARGIN,
+    SIZE_TAB_SECTION_SPACING,
 )
 from spektrafilm_gui.widgets import WidgetBundle
 from spektrafilm_gui.widgets import CollapsibleSection, platform_default_font
 
 
-DEFAULT_CONTROLS_PANEL_WIDTH = 420
+APP_ICON_PATH = Path(__file__).parent / 'assets' / 'app-icon-arcs.ico'
+DEFAULT_CONTROLS_PANEL_WIDTH = 460
 DEFAULT_VIEWER_SPLITTER_WIDTH = 1040
 _DWMWA_USE_IMMERSIVE_DARK_MODE = 20
 _DWMWA_USE_IMMERSIVE_DARK_MODE_BEFORE_20H1 = 19
@@ -205,7 +210,8 @@ def _build_sidebar(controls_panel: QWidget) -> QFrame:
 def _build_controls_tab(*widgets: QWidget) -> QWidget:
     tab = QtWidgets.QWidget()
     layout = QtWidgets.QVBoxLayout(tab)
-    layout.setContentsMargins(0, SIZE_TAB_CONTENT_TOP_MARGIN, 0, 0)
+    layout.setContentsMargins(0, SIZE_TAB_CONTENT_TOP_MARGIN, SIZE_TAB_CONTENT_RIGHT_MARGIN, 0)
+    layout.setSpacing(SIZE_TAB_SECTION_SPACING)
     layout.setAlignment(Qt.AlignTop)
     for widget in widgets:
         layout.addWidget(widget)
@@ -479,7 +485,7 @@ def build_main_window(
 
     main_window = AppMainWindow()
     main_window.setWindowTitle('spektrafilm')
-    main_window.setWindowIcon(QIcon())
+    main_window.setWindowIcon(QIcon(str(APP_ICON_PATH)))
     main_window.resize(DEFAULT_CONTROLS_PANEL_WIDTH + DEFAULT_VIEWER_SPLITTER_WIDTH, 980)
     main_window.setFont(platform_default_font())
     main_window.setStyleSheet(APP_STYLE_SHEET)
@@ -527,7 +533,7 @@ def set_status(viewer: napari.Viewer, message: str, *, timeout_ms: int = 5000) -
         return
     status_bar = host_window.statusBar() if hasattr(host_window, 'statusBar') else None
     if status_bar is not None:
-        status_bar.showMessage(message, timeout_ms)
+        status_bar.showMessage(translate(message), timeout_ms)
 
 
 def show_viewer_window(viewer: napari.Viewer) -> None:

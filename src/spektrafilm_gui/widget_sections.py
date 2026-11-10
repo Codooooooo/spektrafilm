@@ -33,6 +33,7 @@ from spektrafilm_gui.param_manifest import (
     SIMULATION_OUTPUT_PANEL_FIELDS,
     SIMULATION_PROFILE_PANEL_FIELDS,
     SIMULATION_SPECIAL_BORROWED_FIELDS,
+    slider_range_for,
     SPECTRAL_PANEL_FIELDS,
     SPECIAL_FIELDS,
     TUNE_PANEL_FIELDS,
@@ -47,10 +48,15 @@ from spektrafilm_gui.state import (
     SpecialState,
     clone_state_section,
 )
+from spektrafilm_gui.i18n_zh import translate
 from spektrafilm_gui.persistence import load_dialog_dir, save_dialog_dir
-from spektrafilm_gui.theme_palette import SIZE_FOOTER_ITEM_SPACING
+from spektrafilm_gui.theme_palette import (
+    SIZE_FOOTER_ITEM_SPACING,
+    SIZE_FORM_HORIZONTAL_SPACING,
+    SIZE_FORM_VERTICAL_SPACING,
+)
 from spektrafilm_gui.options import RawWhiteBalance
-from spektrafilm_gui.widget_editors import BoolEditor, EnumEditor, FloatEditor, FloatTupleEditor, IntEditor, IntTupleEditor, ProfileEnumEditor
+from spektrafilm_gui.widget_editors import BoolEditor, EnumEditor, FloatEditor, FloatTupleEditor, IntEditor, IntTupleEditor, ProfileEnumEditor, SliderSpinEditor
 from spektrafilm_gui.widget_primitives import CollapsibleSection, normalize_ui_text as _normalize_ui_text
 
 
@@ -139,6 +145,8 @@ def _new_form_layout() -> QFormLayout:
     form.setContentsMargins(0, 0, 0, 0)
     form.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
     form.setFormAlignment(Qt.AlignTop | Qt.AlignLeft)
+    form.setVerticalSpacing(SIZE_FORM_VERTICAL_SPACING)
+    form.setHorizontalSpacing(SIZE_FORM_HORIZONTAL_SPACING)
     return form
 
 
@@ -261,7 +269,11 @@ def _editor_from_param_spec(annotation: Any, spec: ParamSpec, *, label: str) -> 
     elif annotation is int:
         editor = IntEditor()
     elif annotation is float:
-        editor = FloatEditor(decimals=decimals)
+        slider_range = slider_range_for(spec)
+        if slider_range is None:
+            editor = FloatEditor(decimals=decimals)
+        else:
+            editor = SliderSpinEditor(low=slider_range[0], high=slider_range[1], decimals=decimals)
     elif get_origin(annotation) is tuple:
         element_types = get_args(annotation)
         if element_types and all(element_type is int for element_type in element_types):
@@ -397,7 +409,7 @@ class LoadRawSection(QWidget):
         self.setLayout(_build_collapsible_form_section(self.TITLE, form, expanded=False))
 
     def _choose_file(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(self, _normalize_ui_text('Select input raw'), load_dialog_dir('raw_input'))
+        path, _ = QFileDialog.getOpenFileName(self, translate(_normalize_ui_text('Select input raw')), load_dialog_dir('raw_input'))
         if not path:
             return
         save_dialog_dir('raw_input', str(Path(path).parent))
@@ -578,7 +590,7 @@ class FilePickerSection(QWidget):
         _set_single_collapsible_layout(self, 'Import RGB', content, expanded=False)
 
     def _choose_file(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(self, _normalize_ui_text('Select input image'), load_dialog_dir('rgb_input'))
+        path, _ = QFileDialog.getOpenFileName(self, translate(_normalize_ui_text('Select input image')), load_dialog_dir('rgb_input'))
         if not path:
             return
         save_dialog_dir('rgb_input', str(Path(path).parent))
@@ -713,7 +725,7 @@ class SimulationSection(QWidget):
             self.scan_requested.emit,
             tooltip=scan_button_spec['tooltip'],
             preserve_case=scan_button_spec['preserve_case'],
-            role='accentAction',
+            role='primaryAction',
         )
         save_button_spec = _SIMULATION_ACTION_BUTTON_SPECS['save']
         self.save_button = _build_button(

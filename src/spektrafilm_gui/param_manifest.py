@@ -98,6 +98,37 @@ class GroupManifest:
     panel_fields: tuple[ParamSpec, ...] | None = None
 
 
+# Usual working ranges for sliders. The number box next to a slider still
+# accepts anything the parameter's own min/max allow.
+SLIDER_RANGES: dict[str, tuple[float, float]] = {
+    "exposure_compensation_ev": (-5.0, 5.0),
+    "print_exposure": (0.0, 3.0),
+    "print_y_filter_shift": (-60.0, 60.0),
+    "print_m_filter_shift": (-60.0, 60.0),
+    "amount": (0.0, 2.0),
+    "inhibition_samelayer": (0.0, 2.0),
+    "inhibition_interlayer": (0.0, 2.0),
+    "scatter_amount": (0.0, 2.0),
+    "scatter_spatial_scale": (0.0, 3.0),
+    "halation_amount": (0.0, 3.0),
+    "halation_spatial_scale": (0.0, 3.0),
+    "boost_ev": (0.0, 8.0),
+    "protect_ev": (0.0, 8.0),
+    "particle_area_um2": (0.0, 3.0),
+    "blur": (0.0, 3.0),
+    "film_gamma_factor": (0.0, 2.0),
+}
+
+
+def slider_range_for(spec: ParamSpec) -> tuple[float, float] | None:
+    """The slider range for a float field, or ``None`` to keep a plain number box."""
+    if spec.leaf in SLIDER_RANGES:
+        return SLIDER_RANGES[spec.leaf]
+    if spec.min is not None and spec.max is not None:
+        return (float(spec.min), float(spec.max))
+    return None
+
+
 _DC = "film_render.dir_couplers"
 
 DIR_COUPLERS_MANIFEST = GroupManifest(

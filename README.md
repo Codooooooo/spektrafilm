@@ -1,3 +1,49 @@
+# spektrafilm — 桌面体验增强版 (fork)
+
+> 本仓库 fork 自 [andreavolpato/spektrafilm](https://github.com/andreavolpato/spektrafilm)，光谱胶片模拟的核心模型与胶片数据均来自原作者。本 fork 在其基础上为桌面 GUI 增加批量处理、编辑工具、中文界面与若干性能优化。许可证与原项目一致，详见 [LICENSE](LICENSE) 与 [SPEKTRAFILM_LICENSE.txt](SPEKTRAFILM_LICENSE.txt)。
+>
+> This is a fork of [andreavolpato/spektrafilm](https://github.com/andreavolpato/spektrafilm). All credit for the spectral film model and stock data goes to the original author. This fork adds batch processing, editing tools, a Simplified Chinese UI and several performance improvements to the desktop GUI.
+
+## 新增内容 / What's new in this fork
+
+**批量处理 Batch workflow**
+- 文件夹浏览面板，选择文件夹即可载入其中的 RAW、TIFF、JPEG、PNG、EXR 照片 — folder browser panel (`folder_panel.py`)
+- 胶片条与印样（contact sheet）两种缩略图视图 — film strip / contact sheet view (`batch_panel.py`)
+- 以当前参数批量导出 JPEG / TIFF（16 位）/ PNG / EXR（16 位浮点），在后台线程运行、不阻塞界面 — background batch export (`batch.py`, `controller_batch.py`)
+
+**编辑工具 Editing tools** (`editing_tools.py`)
+- 撤销历史（最多 100 步，按编辑停顿自动记录）、一键重置、前后对比
+- 可视化胶片 / 相纸选择器，替代原来的下拉列表，且保持原有存档与参数兼容 (`stock_picker.py`)
+
+**性能 Performance**
+- 用 Numba 重写 CAM16-UCS 正 / 逆变换，仅计算输出色域压缩所需的量并行执行；单元测试验证与 `colour` 库结果一致（atol 1e-9）(`fast_cam16ucs.py`, `tests/test_fast_cam16ucs.py`)
+- 3D LUT 预处理结果加入 LRU 缓存，避免重复准备 (`fast_interp_lut.py`)
+- RAW 预览使用半尺寸解码；预览缩放先做块平均预滤波，再做精确缩放；相同参数的渲染结果缓存复用 (`raw_file_processor.py`, `controller_runtime.py`)
+
+**界面与交付 UI & packaging**
+- 重新设计的主题配色、顶部栏与图标工具栏 (`theme_*.py`, `workspace.py`, `ui_icons.py`)
+- 简体中文界面：只翻译显示文本，存档与参数键名保持英文，旧存档不受影响 (`i18n_zh.py`)
+- Windows 无控制台启动器：启动画面 + 启动失败时弹窗并写入日志 (`launcher.py`)
+
+## 运行 / Run
+
+```bash
+pip install -e .
+spektrafilm                          # 标准启动 / standard launch
+pythonw -m spektrafilm_gui.launcher  # Windows 无控制台启动（带启动画面）/ windowed launch on Windows
+```
+
+测试 / Tests:
+
+```bash
+pip install -e ".[dev]"
+pytest tests/test_fast_cam16ucs.py tests/gui/test_batch.py
+```
+
+---
+
+*以下为原项目 README / Original README below.*
+
 ![spektrafilm banner](img/readme/banner.jpg)
 
 > [!WARNING]

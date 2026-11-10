@@ -6,6 +6,7 @@ import numpy as np
 from qtpy import QtCore, QtGui, QtWidgets
 
 from spektrafilm_gui.controller import GuiController
+from spektrafilm_gui.i18n_zh import localize_app
 from spektrafilm_gui.napari_layout import (
     build_controls_panel,
     build_main_window,
@@ -101,7 +102,8 @@ class _WarmupTask(QRunnable):
 
     def run(self) -> None:
         try:
-            self._warmup_fn()
+            with import_module('spektrafilm_gui.controller_runtime').SIMULATION_LOCK:
+                self._warmup_fn()
         except (AttributeError, ImportError, LookupError, OSError, RuntimeError, TypeError, ValueError):
             return
 
@@ -302,9 +304,13 @@ def create_app() -> GuiApp:
         main_window=main_window,
     )
 
-def main():
+def main(before_show: Callable[[], Any] | None = None):
     napari = import_module('napari')
     app = create_app()
+    batch = import_module('spektrafilm_gui.workspace').install_workspace(app)  # noqa: F841 - owns the batch signal connections
+    localize_app(app.main_window)
+    if before_show is not None:
+        before_show()
     show_viewer_window(app.viewer)
     napari.run()
 

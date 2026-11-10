@@ -378,6 +378,7 @@ def load_and_process_raw_file(
     output_colorspace: str = "ACES2065-1",
     output_cctf_encoding: bool = False,
     lens_info_out: dict[str, str] | None = None,
+    half_size: bool = False,
 ) -> np.ndarray:
     """Load a RAW file into linear RGB and optionally convert its colourspace.
 
@@ -408,6 +409,9 @@ def load_and_process_raw_file(
     output_cctf_encoding
         Whether to apply the output colourspace transfer function when a
         colourspace conversion is requested.
+    half_size
+        Skip demosaicing and return half the linear resolution. Much faster,
+        and enough for previews.
 
     Returns
     -------
@@ -417,6 +421,8 @@ def load_and_process_raw_file(
 
     with rawpy.imread(str(raw_path)) as raw:
         params, postprocess_adaptation, tint_multiplier = _postprocess_params(white_balance, temperature, tint)
+        if half_size:
+            params['half_size'] = True
         rgb = raw.postprocess(**params).astype(np.float32) / np.float32(65535.0)
 
     if lens_correction:

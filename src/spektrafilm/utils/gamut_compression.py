@@ -28,9 +28,11 @@ from dataclasses import dataclass
 from typing import Literal
 
 import colour
-import numpy as np 
+import numpy as np
 from matplotlib.path import Path as MplPath
 from scipy.ndimage import map_coordinates
+
+from spektrafilm.utils.fast_cam16ucs import cam16ucs_to_xyz, xyz_to_cam16ucs
 
 
 # ---------------------------------------------------------------------------
@@ -1151,9 +1153,7 @@ def compress_rgb_cam16ucs_chroma(
         rgb, colourspace=output_color_space,
         illuminant=white, apply_cctf_decoding=False,
     ))
-    jab = np.asarray(colour.XYZ_to_CAM16UCS(
-        xyz, XYZ_w=xyz_w, L_A=_CAM16UCS_L_A, Y_b=_CAM16UCS_Y_B,
-    ))
+    jab = xyz_to_cam16ucs(xyz, xyz_w=xyz_w, l_a=_CAM16UCS_L_A, y_b=_CAM16UCS_Y_B)
     Jp = jab[..., 0]
     ap = jab[..., 1]
     bp = jab[..., 2]
@@ -1181,9 +1181,7 @@ def compress_rgb_cam16ucs_chroma(
     ap_new = Cp_new * np.cos(hp)
     bp_new = Cp_new * np.sin(hp)
     jab_new = np.stack([Jp, ap_new, bp_new], axis=-1)
-    xyz_new = np.asarray(colour.CAM16UCS_to_XYZ(
-        jab_new, XYZ_w=xyz_w, L_A=_CAM16UCS_L_A, Y_b=_CAM16UCS_Y_B,
-    ))
+    xyz_new = cam16ucs_to_xyz(jab_new, xyz_w=xyz_w, l_a=_CAM16UCS_L_A, y_b=_CAM16UCS_Y_B)
     rgb_new = np.asarray(colour.XYZ_to_RGB(
         xyz_new, colourspace=output_color_space,
         illuminant=white, apply_cctf_encoding=False,

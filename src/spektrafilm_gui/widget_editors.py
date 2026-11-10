@@ -14,6 +14,7 @@ QStyledItemDelegate = QtWidgets.QStyledItemDelegate
 QStylePainter = QtWidgets.QStylePainter
 
 from spektrafilm.profiles.io import load_profile
+from spektrafilm_gui.i18n_zh import translate_enum
 from spektrafilm_gui.theme_palette import (
     ACCENT_COLOR_TEXT,
     ACCENT_COLOR_TEXT_SECONDARY,
@@ -60,7 +61,7 @@ def _draw_profile_display_text(
         return
 
     font_metrics = QtGui.QFontMetrics(font)
-    prefix_text = f'{profile_use} '
+    prefix_text = f'{translate_enum(profile_use)} '
     slash_text = '/ '
     prefix_width = font_metrics.horizontalAdvance(prefix_text)
     slash_width = font_metrics.horizontalAdvance(slash_text)
@@ -153,7 +154,7 @@ class FloatEditor(QtWidgets.QDoubleSpinBox):
         self.setMinimum(minimum)
         self.setMaximum(maximum)
         self.setKeyboardTracking(False)
-        self.setFixedHeight(24)
+        self.setFixedHeight(26)
 
     @property
     def value(self) -> float:
@@ -164,13 +165,150 @@ class FloatEditor(QtWidgets.QDoubleSpinBox):
         self.setValue(value)
 
 
+class _ValueSlider(QtWidgets.QSlider):
+    """Jumps to a click on the track and leaves the wheel to the scroll area."""
+
+    doubleClicked = QtCore.Signal()
+
+    def mousePressEvent(self, event) -> None:  # noqa: N802 - Qt API name
+        if event.button() == QtCore.Qt.LeftButton:
+            option = QtWidgets.QStyleOptionSlider()
+            self.initStyleOption(option)
+            position = event.position().toPoint()
+            handle = self.style().subControlRect(QStyle.CC_Slider, option, QStyle.SC_SliderHandle, self)
+            if handle.contains(position):
+                # Some styles re-centre the handle under the press; grabbing it must not change the value.
+                value = self.value()
+                was_blocked = self.blockSignals(True)
+                super().mousePressEvent(event)
+                self.setValue(value)
+                self.blockSignals(was_blocked)
+                return
+            handle_width = handle.width()
+            span = max(self.width() - handle_width, 1)
+            self.setSliderDown(True)  # the editor reports the value once, on release
+            self.setValue(QStyle.sliderValueFromPosition(
+                self.minimum(), self.maximum(), position.x() - handle_width // 2, span,
+            ))
+        super().mousePressEvent(event)
+
+    def mouseDoubleClickEvent(self, event) -> None:  # noqa: N802 - Qt API name
+        if event.button() == QtCore.Qt.LeftButton:
+            self.doubleClicked.emit()
+            event.accept()
+            return
+        super().mouseDoubleClickEvent(event)
+
+    def wheelEvent(self, event) -> None:  # noqa: N802 - Qt API name
+        event.ignore()
+
+
+class SliderSpinEditor(QtWidgets.QWidget):
+    """Slider for the usual range plus a number box that can go beyond it.
+
+    While dragging only the number updates; ``valueChanged`` fires on release so
+    a drag triggers one preview instead of one per pixel. Double-clicking the
+    slider returns to the default from ``set_default``.
+    """
+
+    valueChanged = QtCore.Signal(float)
+    _SLIDER_STEPS = 1000
+    _VALUE_WIDTH = 66
+
+    def __init__(self, *, low: float, high: float, decimals: int = 2):
+        super().__init__()
+        self._low = low
+        self._high = high
+        self._spin = FloatEditor(decimals=decimals)
+        self._spin.setObjectName('sliderValue')
+        self._spin.setFixedWidth(self._VALUE_WIDTH)
+        self._spin.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+        self._spin.setButtonSymbols(QtWidgets.QAbstractSpinBox.NoButtons)
+        self._default_value = self._spin.value
+        self._reported_value = self._spin.value
+        self._slider = _ValueSlider(QtCore.Qt.Horizontal)
+        self._slider.setObjectName('valueSlider')
+        self._slider.setProperty('bipolar', low < 0.0 < high)
+        self._slider.setRange(0, self._SLIDER_STEPS)
+        self._slider.setFocusPolicy(QtCore.Qt.NoFocus)
+        self._slider.setFixedHeight(26)
+        self._slider.setCursor(QtCore.Qt.PointingHandCursor)
+
+        layout = QtWidgets.QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+        layout.addWidget(self._slider, 1)
+        layout.addWidget(self._spin)
+
+        self._spin.valueChanged.connect(self._on_spin_changed)
+        self._slider.valueChanged.connect(self._on_slider_changed)
+        self._slider.sliderReleased.connect(self._emit_value)
+        self._slider.doubleClicked.connect(self.reset_to_default)
+
+    def set_default(self, value: float) -> None:
+        self._default_value = value
+
+    def reset_to_default(self) -> None:
+        self._spin.setValue(self._default_value)
+
+    def _slider_position(self, value: float) -> int:
+        fraction = (value - self._low) / max(self._high - self._low, 1e-9)
+        return int(round(max(0.0, min(1.0, fraction)) * self._SLIDER_STEPS))
+
+    def _on_spin_changed(self, value: float) -> None:
+        was_blocked = self._slider.blockSignals(True)
+        self._slider.setValue(self._slider_position(value))
+        self._slider.blockSignals(was_blocked)
+        self._reported_value = value
+        self.valueChanged.emit(value)
+
+    def _on_slider_changed(self, position: int) -> None:
+        value = self._low + (self._high - self._low) * position / self._SLIDER_STEPS
+        was_blocked = self._spin.blockSignals(True)
+        self._spin.setValue(value)
+        self._spin.blockSignals(was_blocked)
+        if not self._slider.isSliderDown():
+            self._emit_value()
+
+    def _emit_value(self) -> None:
+        if self.value != self._reported_value:
+            self._reported_value = self.value
+            self.valueChanged.emit(self.value)
+
+    @property
+    def value(self) -> float:
+        return self._spin.value
+
+    @value.setter
+    def value(self, value: float) -> None:
+        self._spin.value = value
+        self._reported_value = self._spin.value
+        was_blocked = self._slider.blockSignals(True)
+        self._slider.setValue(self._slider_position(value))
+        self._slider.blockSignals(was_blocked)
+
+    def setMinimum(self, value: float) -> None:  # noqa: N802 - mirrors the spin box API
+        self._spin.setMinimum(value)
+
+    def setMaximum(self, value: float) -> None:  # noqa: N802 - mirrors the spin box API
+        self._spin.setMaximum(value)
+
+    def setSingleStep(self, value: float) -> None:  # noqa: N802 - mirrors the spin box API
+        self._spin.setSingleStep(value)
+
+    def setToolTip(self, text: str) -> None:  # noqa: N802 - Qt API name
+        super().setToolTip(text)
+        self._spin.setToolTip(text)
+        self._slider.setToolTip(text)
+
+
 class IntEditor(QtWidgets.QSpinBox):
     def __init__(self, *, minimum: int = -1_000_000, maximum: int = 1_000_000):
         super().__init__()
         self.setMinimum(minimum)
         self.setMaximum(maximum)
         self.setKeyboardTracking(False)
-        self.setFixedHeight(24)
+        self.setFixedHeight(26)
 
     @property
     def value(self) -> int:
@@ -187,7 +325,7 @@ class BoolEditor(QtWidgets.QCheckBox):
         self.setText('')
         self.setMouseTracking(True)
         self.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
-        self.setFixedHeight(24)
+        self.setFixedHeight(26)
 
     @property
     def value(self) -> bool:
@@ -216,13 +354,13 @@ class BoolEditor(QtWidgets.QCheckBox):
                 BOOL_EDITOR_HOVER_BG if is_hovered else BOOL_EDITOR_FILL_ENABLED if is_enabled else BOOL_EDITOR_FILL_DISABLED,
             )
             checked_color = resolve_theme_qcolor(
-                BOOL_EDITOR_HOVER_BG if is_hovered else BOOL_EDITOR_CHECKED_ENABLED if is_enabled else BOOL_EDITOR_CHECKED_DISABLED,
+                BOOL_EDITOR_CHECKED_ENABLED if is_enabled else BOOL_EDITOR_CHECKED_DISABLED,
             )
             border_color = resolve_theme_qcolor(BOOL_EDITOR_BORDER_CHECKED if self.isChecked() else BOOL_EDITOR_BORDER_UNCHECKED)
 
             painter.setPen(QtGui.QPen(border_color, 1))
             painter.setBrush(checked_color if self.isChecked() else fill_color)
-            painter.drawRect(indicator_rect)
+            painter.drawRoundedRect(indicator_rect, 3, 3)
 
             if self.isChecked():
                 self._draw_check_mark(painter, indicator_rect)
@@ -255,10 +393,17 @@ class BoolEditor(QtWidgets.QCheckBox):
         )
 
 
+class EnumItemDelegate(QStyledItemDelegate):
+    def displayText(self, value, locale) -> str:  # noqa: N802 - Qt API name
+        del locale
+        return translate_enum(str(value))
+
+
 class EnumEditor(QtWidgets.QComboBox):
     def __init__(self, values: list[str]):
         super().__init__()
         self.addItems(values)
+        self.setItemDelegate(EnumItemDelegate(self))
 
     @property
     def value(self) -> str:
@@ -271,6 +416,15 @@ class EnumEditor(QtWidgets.QComboBox):
             self.setCurrentIndex(index)
         else:
             raise ValueError(f"{value!r} is not a valid option")
+
+    def paintEvent(self, event) -> None:  # noqa: N802 - Qt API name
+        del event
+        painter = QStylePainter(self)
+        option = QStyleOptionComboBox()
+        self.initStyleOption(option)
+        option.currentText = translate_enum(self.currentText())
+        painter.drawComplexControl(QStyle.CC_ComboBox, option)
+        painter.drawControl(QStyle.CE_ComboBoxLabel, option)
 
 
 class TupleEditor(QtWidgets.QWidget):

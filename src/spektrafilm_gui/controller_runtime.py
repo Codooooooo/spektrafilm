@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import threading
 from typing import Any, Callable
 
 import numpy as np
@@ -9,6 +10,9 @@ from qtpy import QtCore
 
 
 DISPLAY_PREVIEW_COLOR_SPACE = 'sRGB'
+PREVIEW_PREFILTER_MARGIN = 2
+# The simulation runs numba parallel loops, which must not start from two threads at once.
+SIMULATION_LOCK = threading.Lock()
 QObject = getattr(QtCore, 'QObject')
 QRunnable = getattr(QtCore, 'QRunnable')
 Signal = getattr(QtCore, 'Signal')
@@ -33,6 +37,14 @@ class SimulationResult:
     status_message: str
 
 
+@dataclass(frozen=True, slots=True)
+class CachedResult:
+    display: np.ndarray
+    float_image: np.ndarray
+    output_color_space: str
+    use_display_transform: bool
+
+
 class SimulationWorkerSignals(QObject):
     finished = Signal(object)
     failed = Signal(str)
@@ -52,6 +64,37 @@ class SimulationWorker(QRunnable):
             self.signals.failed.emit(f'{type(exc).__name__}: {exc}')
             return
         self.signals.finished.emit(result)
+
+
+def look_key(state: Any) -> int:
+    """Identifies a complete set of GUI parameters for result caching."""
+    return hash(repr(state))
+
+
+def fast_resize_for_preview(image: np.ndarray, max_size: int) -> np.ndarray:
+    """Downscale to ``max_size`` like ``resize_for_preview``, at a fraction of the cost.
+
+    Anti-aliased resizing blurs the whole source first, which is what makes it
+    slow on full-resolution photos. A block average down to about twice the
+    target size does the bulk of the filtering cheaply; the precise resize then
+    only has a small image to work on.
+    """
+    from skimage.transform import resize
+
+    height, width = image.shape[:2]
+    long_edge = max(height, width)
+    if long_edge <= max_size:
+        return image
+    scale = max_size / long_edge
+    target = (int(height * scale), int(width * scale))
+    source = np.asarray(image)
+    block = int(long_edge / max_size / PREVIEW_PREFILTER_MARGIN)
+    if block >= 2:
+        rows = height // block
+        columns = width // block
+        trimmed = source[:rows * block, :columns * block]
+        source = trimmed.reshape(rows, block, columns, block, -1).mean(axis=(1, 3))
+    return resize(source, target, preserve_range=True, anti_aliasing=True, order=1).astype(image.dtype)
 
 
 def normalized_image_data(image: np.ndarray) -> np.ndarray:

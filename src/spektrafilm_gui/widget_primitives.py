@@ -8,6 +8,7 @@ QSize = getattr(QtCore, 'QSize')
 from spektrafilm_gui.theme_palette import (
     HEADER_DIVIDER_LINE,
     SIZE_FORM_SPACING,
+    SIZE_SECTION_CARD_MARGIN,
     SIZE_SECTION_FRAME_INDENT,
     SIZE_SECTION_FRAME_MARGIN,
     SIZE_SECTION_STACK_SPACING,
@@ -28,6 +29,8 @@ class CollapsibleSection(QtWidgets.QWidget):
     def __init__(self, title: str, content: QtWidgets.QWidget, *, expanded: bool = True):
         super().__init__()
         self._content = content
+        self.setObjectName('sectionCard')
+        self.setAttribute(QtCore.Qt.WA_StyledBackground, True)
 
         self._toggle = QtWidgets.QToolButton()
         self._toggle.setProperty('role', 'sectionToggle')
@@ -85,7 +88,7 @@ class CollapsibleSection(QtWidgets.QWidget):
         frame_layout.addWidget(self._content)
 
         layout = QtWidgets.QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setContentsMargins(SIZE_SECTION_CARD_MARGIN, SIZE_SECTION_CARD_MARGIN, SIZE_SECTION_CARD_MARGIN, SIZE_SECTION_CARD_MARGIN)
         layout.setSpacing(int(SIZE_SECTION_STACK_SPACING.removesuffix('px')))
         layout.setAlignment(QtCore.Qt.AlignTop)
         layout.addWidget(header)

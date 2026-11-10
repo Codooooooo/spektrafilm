@@ -1,3 +1,5 @@
+from collections import OrderedDict
+
 import numpy as np
 import warnings
 from numba import njit, prange
@@ -477,12 +479,33 @@ def _apply_lut_pchip_3d_prepared(lut, slope_x, slope_y, slope_z, cell_min, cell_
             output[i, j, 2] = out_val[2]
     return output
 
+_PREPARED_LUTS = OrderedDict()
+_PREPARED_LUTS_MAX = 8
+
+
+def _prepared_lut_pchip_3d(lut):
+    """Reuse the preparation of a LUT object seen recently.
+
+    Holding the prepared tuple keeps the LUT alive, so its ``id`` cannot be reused.
+    """
+    key = id(lut)
+    prepared = _PREPARED_LUTS.get(key)
+    if prepared is not None and prepared[1] is lut:
+        _PREPARED_LUTS.move_to_end(key)
+        return prepared[0]
+    result = prepare_lut_pchip_3d(lut)
+    _PREPARED_LUTS[key] = (result, lut)
+    while len(_PREPARED_LUTS) > _PREPARED_LUTS_MAX:
+        _PREPARED_LUTS.popitem(last=False)
+    return result
+
+
 def apply_lut_pchip_3d(lut, image):
     """
     Apply the PCHIP 3D LUT path using precomputed per-axis slopes.
     Pass the tuple returned by prepare_lut_pchip_3d().
     """
-    lut, slope_x, slope_y, slope_z, cell_min, cell_max = prepare_lut_pchip_3d(lut)
+    lut, slope_x, slope_y, slope_z, cell_min, cell_max = _prepared_lut_pchip_3d(lut)
     if lut.shape[0] == 1:
         return _apply_lut_constant_3d(lut, image)
     return _apply_lut_pchip_3d_prepared(lut, slope_x, slope_y, slope_z, cell_min, cell_max, image)
